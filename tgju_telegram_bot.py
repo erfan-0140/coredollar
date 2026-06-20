@@ -3,11 +3,13 @@
 """
 
 import os
+import re
+import time
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-TGJU_URL = "https://www.tgju.org/"
+PROFILE_BASE = "https://www.tgju.org/profile/"
 
 # ارزها
 CURRENCY_ITEMS = [
@@ -24,7 +26,7 @@ GOLD_ITEMS = [
     ("mesghal", "مثقال طلا"),
     ("rob", "ربع سکه"),
     ("nim", "نیم سکه"),
-    ("sekeb", "سکه تمام بهار آزادی"),
+    ("sekee", "سکه تمام (امامی)"),
     ("ons", "انس جهانی طلا"),
 ]
 
@@ -37,24 +39,32 @@ HEADERS = {
     )
 }
 
+RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 
-def fetch_prices() -> dict:
-    """صفحه‌ی اصلی tgju.org رو می‌گیره و قیمت آیتم‌های موردنظر رو استخراج می‌کنه.
-    خروجی: دیکشنری {row_id: قیمت}
-    """
-    resp = requests.get(TGJU_URL, headers=HEADERS, timeout=15)
+
+def fetch_price(row_id: str) -> str | None:
+    """صفحه‌ی اختصاصی یک آیتم رو می‌گیره و مقدار "نرخ فعلی" رو استخراج می‌کنه."""
+    url = f"{PROFILE_BASE}{row_id}"
+    resp = requests.get(url, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
+    text = soup.get_text(" ", strip=True)
+    match = RATE_PATTERN.search(text)
+    return match.group(1) if match else None
 
+
+def fetch_all_prices() -> dict:
     results = {}
-    for row_id, _ in ALL_ITEMS:
-        row = soup.find("tr", attrs={"data-market-row": row_id})
-        if not row:
-            continue
-        price_cell = row.find("td", class_="nf")
-        if not price_cell:
-            continue
-        results[row_id] = price_cell.get_text(strip=True)
+    for row_id, fa_name in ALL_ITEMS:
+        try:
+            price = fetch_price(row_id)
+            if price:
+                results[row_id] = price
+            else:
+                print(f"قیمتی برای {fa_name} ({row_id}) پیدا نشد.")
+        except Exception as e:
+            print(f"خطا در گرفتن {fa_name} ({row_id}): {e}")
+        time.sleep(0.5)
     return results
 
 
@@ -64,22 +74,24 @@ def build_message(prices: dict) -> str:
 
     for row_id, fa_name in CURRENCY_ITEMS:
         if row_id in prices:
-            lines.append(f"- {fa_name}: {prices[row_id]}")
+            lines.append(f"{fa_name}: {prices[row_id]}")
 
     lines.append("----------------------------")
 
     for row_id, fa_name in GOLD_ITEMS:
         if row_id in prices:
-            lines.append(f"- {fa_name}: {prices[row_id]}")
+            lines.append(f"{fa_name}: {prices[row_id]}")
 
     lines.append("")
     lines.append("منبع: tgju.org")
-    return "\n".join(lines)
+
+    body = "\n".join(lines)
+    return f"<b>{body}</b>"
 
 
 def send_to_telegram(text: str, bot_token: str, chat_id: str) -> dict:
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     resp = requests.post(url, data=payload, timeout=15)
     if resp.status_code != 200:
         print("پاسخ تلگرام:", resp.text)
@@ -93,11 +105,10 @@ def main():
     if not bot_token or not chat_id:
         raise SystemExit("متغیرهای محیطی BOT_TOKEN و CHANNEL_ID باید تنظیم شده باشن.")
 
-    prices = fetch_prices()
+    prices = fetch_all_prices()
     if not prices:
         raise SystemExit(
-            "هیچ قیمتی استخراج نشد. احتمالا ساختار صفحه‌ی tgju.org تغییر کرده "
-            "و باید شناسه‌های موجود در CURRENCY_ITEMS / GOLD_ITEMS بازبینی بشن."
+            "هیچ قیمتی استخراج نشد. احتمالا ساختار صفحات tgju.org تغییر کرده."
         )
 
     message = build_message(prices)
