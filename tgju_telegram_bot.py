@@ -6,10 +6,13 @@ import os
 import re
 import time
 import requests
+import jdatetime
 from bs4 import BeautifulSoup
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 PROFILE_BASE = "https://www.tgju.org/profile/"
+TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
 # ارزها
 CURRENCY_ITEMS = [
@@ -41,6 +44,26 @@ HEADERS = {
 
 RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 
+SEPARATOR = "-" * 56
+
+PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+JALALI_MONTHS = [
+    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+]
+
+
+def now_jalali_str() -> str:
+    """تاریخ و ساعت فعلی به وقت تهران، به شمسی و با اعداد فارسی."""
+    now_gregorian = datetime.now(TEHRAN_TZ)
+    j = jdatetime.datetime.fromgregorian(datetime=now_gregorian)
+    day = str(j.day).translate(PERSIAN_DIGITS)
+    year = str(j.year).translate(PERSIAN_DIGITS)
+    month_name = JALALI_MONTHS[j.month - 1]
+    hour = str(now_gregorian.hour).zfill(2).translate(PERSIAN_DIGITS)
+    minute = str(now_gregorian.minute).zfill(2).translate(PERSIAN_DIGITS)
+    return f"{day} {month_name} {year} - ساعت {hour}:{minute}"
+
 
 def fetch_price(row_id: str) -> str | None:
     """صفحه‌ی اختصاصی یک آیتم رو می‌گیره و مقدار "نرخ فعلی" رو استخراج می‌کنه."""
@@ -69,20 +92,20 @@ def fetch_all_prices() -> dict:
 
 
 def build_message(prices: dict) -> str:
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines = [f"قیمت لحظه‌ای ارز و طلا - {now}", ""]
+    date_str = now_jalali_str()
+    lines = [f"قیمت لحظه‌ای ارز و طلا - {date_str}", SEPARATOR]
 
     for row_id, fa_name in CURRENCY_ITEMS:
         if row_id in prices:
             lines.append(f"{fa_name}: {prices[row_id]}")
 
-    lines.append("----------------------------")
+    lines.append(SEPARATOR)
 
     for row_id, fa_name in GOLD_ITEMS:
         if row_id in prices:
             lines.append(f"{fa_name}: {prices[row_id]}")
 
-    lines.append("")
+    lines.append(SEPARATOR)
     lines.append("منبع: tgju.org")
 
     body = "\n".join(lines)
