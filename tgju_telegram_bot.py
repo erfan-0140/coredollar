@@ -14,24 +14,20 @@ from zoneinfo import ZoneInfo
 PROFILE_BASE = "https://www.tgju.org/profile/"
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
-# سه گروهِ شش‌تایی ارز - هر گروه یک ستون. ستون اول سمت راستِ پست قرار می‌گیره.
-GROUP1 = [  # ستون راست
+# ارزها: (شناسه‌ی tgju، پرچم)
+CURRENCY_ITEMS = [
     ("price_dollar_rl", "🇺🇸"),
     ("price_eur", "🇪🇺"),
     ("price_gbp", "🇬🇧"),
     ("price_aed", "🇦🇪"),
     ("price_try", "🇹🇷"),
     ("price_cad", "🇨🇦"),
-]
-GROUP2 = [  # ستون وسط
     ("price_cny", "🇨🇳"),
     ("price_omr", "🇴🇲"),
     ("price_iqd", "🇮🇶"),
     ("price_sar", "🇸🇦"),
     ("price_rub", "🇷🇺"),
     ("price_afn", "🇦🇫"),
-]
-GROUP3 = [  # ستون چپ
     ("price_amd", "🇦🇲"),
     ("price_sek", "🇸🇪"),
     ("price_qar", "🇶🇦"),
@@ -50,8 +46,7 @@ GOLD_ITEMS = [
     ("ons", "انس جهانی طلا"),
 ]
 
-CURRENCY_IDS = [pid for pid, _ in GROUP1 + GROUP2 + GROUP3]
-ALL_ITEMS = [(pid, pid) for pid in CURRENCY_IDS] + GOLD_ITEMS
+ALL_ITEMS = [(pid, pid) for pid, _ in CURRENCY_ITEMS] + GOLD_ITEMS
 
 HEADERS = {
     "User-Agent": (
@@ -62,9 +57,8 @@ HEADERS = {
 
 RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 
-SEPARATOR = "\u200f" + "-" * 30
+SEPARATOR = "\u200f" + "━" * 18
 CHANNEL_HANDLE = "@coredollar"
-COL_WIDTH = 15
 
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 JALALI_MONTHS = [
@@ -74,7 +68,6 @@ JALALI_MONTHS = [
 
 
 def now_jalali_date() -> str:
-    """تاریخ امروز به وقت تهران، به شمسی و با اعداد فارسی (بدون ساعت)."""
     now_gregorian = datetime.now(TEHRAN_TZ)
     j = jdatetime.datetime.fromgregorian(datetime=now_gregorian)
     day = str(j.day).translate(PERSIAN_DIGITS)
@@ -84,7 +77,6 @@ def now_jalali_date() -> str:
 
 
 def to_toman(price_str: str) -> str:
-    """قیمت ریالی tgju (با کاما) رو به تومان تبدیل می‌کنه."""
     digits = price_str.replace(",", "")
     try:
         value = float(digits)
@@ -95,7 +87,6 @@ def to_toman(price_str: str) -> str:
 
 
 def fetch_price(row_id: str) -> str | None:
-    """صفحه‌ی اختصاصی یک آیتم رو می‌گیره و مقدار "نرخ فعلی" رو استخراج می‌کنه."""
     url = f"{PROFILE_BASE}{row_id}"
     resp = requests.get(url, headers=HEADERS, timeout=15)
     resp.raise_for_status()
@@ -120,36 +111,29 @@ def fetch_all_prices() -> dict:
     return results
 
 
-def fmt_cell(item: tuple, prices: dict, pad: bool = True) -> str:
-    pid, flag = item
-    price = to_toman(prices[pid]) if pid in prices else "-"
-    cell = f"{flag} {price}"
-    return cell.ljust(COL_WIDTH) if pad else cell
-
-
-def build_currency_grid(prices: dict) -> str:
-    rows = []
-    for i in range(6):
-        c3 = fmt_cell(GROUP3[i], prices)
-        c2 = fmt_cell(GROUP2[i], prices)
-        c1 = fmt_cell(GROUP1[i], prices, pad=False)
-        rows.append(f"{c3}{c2}{c1}")
-    return "\n".join(rows)
-
-
 def build_message(prices: dict) -> str:
-    header = f"<b>{now_jalali_date()}\n{SEPARATOR}</b>"
-    grid = f"<pre>{build_currency_grid(prices)}</pre>"
+    lines = [now_jalali_date(), SEPARATOR, "💰 ارزها", ""]
 
-    gold_lines = []
+    for pid, flag in CURRENCY_ITEMS:
+        if pid in prices:
+            lines.append(f"{flag} {to_toman(prices[pid])}")
+
+    lines.append("")
+    lines.append(SEPARATOR)
+    lines.append("🥇 طلا و سکه")
+    lines.append("")
+
     for row_id, fa_name in GOLD_ITEMS:
         if row_id in prices:
             value = prices[row_id] if row_id == "ons" else to_toman(prices[row_id])
-            gold_lines.append(f"{fa_name}: {value}")
+            lines.append(f"{fa_name}: {value}")
 
-    footer = "<b>" + SEPARATOR + "\n" + "\n".join(gold_lines) + "\n" + SEPARATOR + "\n" + CHANNEL_HANDLE + "</b>"
+    lines.append("")
+    lines.append(SEPARATOR)
+    lines.append(CHANNEL_HANDLE)
 
-    return f"{header}\n{grid}\n{footer}"
+    body = "\n".join(lines)
+    return f"<b>{body}</b>"
 
 
 def send_to_telegram(text: str, bot_token: str, chat_id: str) -> dict:
