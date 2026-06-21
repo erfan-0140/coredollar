@@ -14,13 +14,30 @@ from zoneinfo import ZoneInfo
 PROFILE_BASE = "https://www.tgju.org/profile/"
 TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 
-# ارزها به‌صورت جفت (ستون اول، ستون دوم) برای نمایش دو ستونی
-CURRENCY_PAIRS = [
-    (("price_dollar_rl", "🇺🇸"), ("price_cny", "🇨🇳")),
-    (("price_eur", "🇪🇺"), ("price_omr", "🇴🇲")),
-    (("price_gbp", "🇬🇧"), ("price_iqd", "🇮🇶")),
-    (("price_aed", "🇦🇪"), ("price_sar", "🇸🇦")),
-    (("price_try", "🇹🇷"), ("price_rub", "🇷🇺")),
+# سه گروهِ شش‌تایی ارز - هر گروه یک ستون. ستون اول سمت راستِ پست قرار می‌گیره.
+GROUP1 = [  # ستون راست
+    ("price_dollar_rl", "🇺🇸"),
+    ("price_eur", "🇪🇺"),
+    ("price_gbp", "🇬🇧"),
+    ("price_aed", "🇦🇪"),
+    ("price_try", "🇹🇷"),
+    ("price_cad", "🇨🇦"),
+]
+GROUP2 = [  # ستون وسط
+    ("price_cny", "🇨🇳"),
+    ("price_omr", "🇴🇲"),
+    ("price_iqd", "🇮🇶"),
+    ("price_sar", "🇸🇦"),
+    ("price_rub", "🇷🇺"),
+    ("price_afn", "🇦🇫"),
+]
+GROUP3 = [  # ستون چپ
+    ("price_amd", "🇦🇲"),
+    ("price_sek", "🇸🇪"),
+    ("price_qar", "🇶🇦"),
+    ("price_myr", "🇲🇾"),
+    ("price_thb", "🇹🇭"),
+    ("price_gel", "🇬🇪"),
 ]
 
 # طلا و سکه
@@ -33,7 +50,7 @@ GOLD_ITEMS = [
     ("ons", "انس جهانی طلا"),
 ]
 
-CURRENCY_IDS = [pid for pair in CURRENCY_PAIRS for (pid, _) in pair]
+CURRENCY_IDS = [pid for pid, _ in GROUP1 + GROUP2 + GROUP3]
 ALL_ITEMS = [(pid, pid) for pid in CURRENCY_IDS] + GOLD_ITEMS
 
 HEADERS = {
@@ -45,9 +62,9 @@ HEADERS = {
 
 RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 
-SEPARATOR = "\u200f" + "-" * 30  # کاراکتر نامرئی اول خط باعث میشه از راست شروع بشه
-
+SEPARATOR = "\u200f" + "-" * 30
 CHANNEL_HANDLE = "@coredollar"
+COL_WIDTH = 15
 
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 JALALI_MONTHS = [
@@ -96,33 +113,43 @@ def fetch_all_prices() -> dict:
             if price:
                 results[row_id] = price
             else:
-                print(f"قیمتی برای {fa_name} ({row_id}) پیدا نشد.")
+                print(f"قیمتی برای {fa_name} پیدا نشد.")
         except Exception as e:
-            print(f"خطا در گرفتن {fa_name} ({row_id}): {e}")
+            print(f"خطا در گرفتن {fa_name}: {e}")
         time.sleep(0.5)
     return results
 
 
+def fmt_cell(item: tuple, prices: dict, pad: bool = True) -> str:
+    pid, flag = item
+    price = to_toman(prices[pid]) if pid in prices else "-"
+    cell = f"{flag} {price}"
+    return cell.ljust(COL_WIDTH) if pad else cell
+
+
+def build_currency_grid(prices: dict) -> str:
+    rows = []
+    for i in range(6):
+        c3 = fmt_cell(GROUP3[i], prices)
+        c2 = fmt_cell(GROUP2[i], prices)
+        c1 = fmt_cell(GROUP1[i], prices, pad=False)
+        rows.append(f"{c3}{c2}{c1}")
+    return "\n".join(rows)
+
+
 def build_message(prices: dict) -> str:
-    lines = [now_jalali_date(), SEPARATOR]
+    header = f"<b>{now_jalali_date()}\n{SEPARATOR}</b>"
+    grid = f"<pre>{build_currency_grid(prices)}</pre>"
 
-    for (id1, flag1), (id2, flag2) in CURRENCY_PAIRS:
-        p1 = to_toman(prices[id1]) if id1 in prices else "-"
-        p2 = to_toman(prices[id2]) if id2 in prices else "-"
-        lines.append(f"{flag1} {p1}    {flag2} {p2}")
-
-    lines.append(SEPARATOR)
-
+    gold_lines = []
     for row_id, fa_name in GOLD_ITEMS:
         if row_id in prices:
             value = prices[row_id] if row_id == "ons" else to_toman(prices[row_id])
-            lines.append(f"{fa_name}: {value}")
+            gold_lines.append(f"{fa_name}: {value}")
 
-    lines.append(SEPARATOR)
-    lines.append(CHANNEL_HANDLE)
+    footer = "<b>" + SEPARATOR + "\n" + "\n".join(gold_lines) + "\n" + SEPARATOR + "\n" + CHANNEL_HANDLE + "</b>"
 
-    body = "\n".join(lines)
-    return f"<b>{body}</b>"
+    return f"{header}\n{grid}\n{footer}"
 
 
 def send_to_telegram(text: str, bot_token: str, chat_id: str) -> dict:
