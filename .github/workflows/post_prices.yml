@@ -1,9 +1,6 @@
 name: Post TGJU Prices to Telegram
 
 on:
-  schedule:
-    - cron: "35 6 * * *"
-    - cron: "5,35 7-18 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -26,5 +23,3 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
         run: python tgju_telegram_bot.py
-# refresh
-
