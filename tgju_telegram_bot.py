@@ -44,7 +44,7 @@ HEADERS = {
 
 RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 
-SEPARATOR = "-" * 20
+SEPARATOR = "\u200f" + "-" * 30  # کاراکتر نامرئی اول خط باعث میشه از راست شروع بشه
 
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 JALALI_MONTHS = [
@@ -105,14 +105,15 @@ def build_message(prices: dict) -> str:
 
     for row_id, fa_name in CURRENCY_ITEMS:
         if row_id in prices:
-            lines.append(f"{fa_name}: {to_toman(prices[row_id])} تومان")
+            lines.append(f"{fa_name}: {to_toman(prices[row_id])}")
 
     lines.append(SEPARATOR)
 
     for row_id, fa_name in GOLD_ITEMS:
         if row_id in prices:
-            unit = "دلار" if row_id == "ons" else "تومان"
-            lines.append(f"{fa_name}: {prices[row_id]} {unit}")
+            # انس جهانی طلا به دلاره، بقیه ریالی هستن و باید به تومان تبدیل بشن
+            value = prices[row_id] if row_id == "ons" else to_toman(prices[row_id])
+            lines.append(f"{fa_name}: {value}")
 
     lines.append(SEPARATOR)
     lines.append("منبع: tgju.org")
