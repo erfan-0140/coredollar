@@ -2,8 +2,8 @@ name: Post TGJU Prices to Telegram
 
 on:
   schedule:
-    - cron: "30 6 * * *"
-    - cron: "0,30 7-18 * * *"
+    - cron: "35 6 * * *"
+    - cron: "5,35 7-18 * * *"
   workflow_dispatch: {}
 
 jobs:
