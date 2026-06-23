@@ -1,193 +1,146 @@
-"""
-بات قیمت ارز و طلا - گرفتن قیمت از tgju.org و ارسال به کانال تلگرام
-"""
-
-import os
-import re
-import time
 import requests
-import jdatetime
-from bs4 import BeautifulSoup
+import time
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from bs4 import BeautifulSoup
 
-PROFILE_BASE = "https://www.tgju.org/profile/"
-TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+# ==================== CONFIG ====================
+BOT_TOKEN = '8915418054:AAH_U0jBWvdk7Qp79qULnS_PMPEoeSGr1qU'
+CHANNEL_ID = '@coredollar'
+# ===============================================
 
-# ارزها به‌صورت جفت برای نمایش دو ستونی
-CURRENCY_PAIRS = [
-    (("price_dollar_rl", "🇺🇸"), ("price_eur",  "🇪🇺")),
-    (("price_gbp",       "🇬🇧"), ("price_aed",  "🇦🇪")),
-    (("price_try",       "🇹🇷"), ("price_cad",  "🇨🇦")),
-    (("price_cny",       "🇨🇳"), ("price_rub",  "🇷🇺")),
-]
-
-GOLD_ITEMS = [
-    ("geram18", "💛 طلای ۱۸ عیار (هر گرم)"),
-    ("mesghal", "💛 مثقال طلا"),
-    ("rob",     "💛 ربع سکه"),
-    ("nim",     "💛 نیم سکه"),
-    ("sekee",   "💛 سکه تمام (امامی)"),
-    ("sekeb",   "💛 سکه بهار آزادی"),
-    ("ons",     "💛 انس جهانی طلا"),
-    ("silver_999", "🩶 نقره (هر گرم)"),
-]
-
-CRYPTO_ITEMS = [
-    ("crypto-tether",      "⚛️ ₮"),
-    ("crypto-bitcoin",     "⚛️ ₿"),
-    ("crypto-ethereum",    "⚛️ Ξ"),
-    ("crypto-ripple",      "⚛️ XRP"),
-    ("crypto-tron",        "⚛️ TRX"),
-    ("crypto-dogecoin",    "⚛️ Ð"),
-    ("crypto-gram",        "⚛️ GRAM"),
-    ("crypto-tether-gold", "⚛️ XAUT"),
-]
-
-CURRENCY_IDS = [pid for pair in CURRENCY_PAIRS for (pid, _) in pair]
-ALL_ITEMS = (
-    [(pid, pid) for pid in CURRENCY_IDS]
-    + GOLD_ITEMS
-    + [(pid, pid) for pid, _ in CRYPTO_ITEMS]
-)
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-    )
-}
-
-RATE_PATTERN = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
-
-SEP = "┄" * 18
-CHANNEL_HANDLE = "@coredollar"
-
-PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
-JALALI_MONTHS = [
-    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
-    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
-]
-
-
-def now_jalali_date() -> str:
-    now_gregorian = datetime.now(TEHRAN_TZ)
-    j = jdatetime.datetime.fromgregorian(datetime=now_gregorian)
-    day = str(j.day).translate(PERSIAN_DIGITS)
-    year = str(j.year).translate(PERSIAN_DIGITS)
-    month_name = JALALI_MONTHS[j.month - 1]
-    return f"{day} {month_name} {year}"
-
-
-def to_toman(price_str: str) -> str:
-    digits = price_str.replace(",", "")
+def fetch_tgju_data():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+    }
     try:
-        value = float(digits)
-    except ValueError:
-        return price_str
-    toman = round(value / 10)
-    return f"{toman:,}"
+        # صفحه اصلی + ارز + طلا
+        main_resp = requests.get('https://www.tgju.org/', headers=headers, timeout=15)
+        currency_resp = requests.get('https://www.tgju.org/currency', headers=headers, timeout=15)
+        gold_resp = requests.get('https://www.tgju.org/gold-chart', headers=headers, timeout=15)
+        
+        crypto_resp = requests.get('https://api.tgju.org/v1/market/dataservice/crypto-assets', timeout=15)
+        crypto_data = crypto_resp.json().get('data', [])[:10]
 
+        return {
+            'main': main_resp.text,
+            'currency': currency_resp.text,
+            'gold': gold_resp.text,
+            'crypto': crypto_data
+        }
+    except Exception as e:
+        print(f"خطا در دریافت داده: {e}")
+        return None
 
-def usd_to_toman(usd_str: str, dollar_toman: float) -> str:
-    digits = usd_str.replace(",", "")
+def extract_currency_prices(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    items = {}
+    # جدول ارزها
+    rows = soup.select('table tr')
+    for row in rows:
+        cols = row.select('td')
+        if len(cols) >= 2:
+            name = cols[0].get_text(strip=True)
+            price = cols[1].get_text(strip=True)
+            if 'دلار' in name or 'یورو' in name or 'پوند' in name or 'درهم' in name or 'لیر' in name:
+                items[name] = price
+    return items
+
+def extract_gold_prices(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    items = {}
+    # استخراج قیمت‌های کلیدی
+    prices = soup.find_all('td', class_=lambda x: x and 'price' in x.lower()) or []
+    # یا از متن‌های برجسته
+    texts = soup.get_text()
+    if 'طلای 18 عیار' in texts:
+        # ساده‌ترین روش: جستجو در جدول
+        rows = soup.select('table tr')
+        for row in rows:
+            text = row.get_text()
+            if 'طلای 18 عیار' in text:
+                items['طلای ۱۸ عیار'] = text.split()[-3] if len(text.split()) > 3 else 'N/A'
+            elif 'مثقال طلا' in text:
+                items['مثقال طلا'] = text.split()[-3] if len(text.split()) > 3 else 'N/A'
+            elif 'سکه امامی' in text or 'سکه بهار' in text:
+                items['سکه امامی'] = text.split()[-3] if len(text.split()) > 3 else 'N/A'
+    return items
+
+def format_crypto_post(crypto_list):
+    msg = "**💰 قیمت کریپتوکارنسی‌ها (تومان)**\n\n"
+    msg += f"🕒 {datetime.now().strftime('%Y/%m/%d %H:%M')}\n\n"
+    for item in crypto_list[:8]:
+        title = item.get('title_fa', item.get('title', 'نامشخص'))
+        price = item.get('p_irr', 'N/A')
+        change = item.get('dp', '0')
+        msg += f"• {title}: **{price}** ({change}%)\n"
+    msg += "\n🔗 tgju.org"
+    return msg
+
+def format_gold_post(gold_items):
+    msg = "**🪙 قیمت طلا و سکه**\n\n"
+    msg += f"🕒 {datetime.now().strftime('%Y/%m/%d %H:%M')}\n\n"
+    for name, price in gold_items.items():
+        if price and price != 'N/A':
+            msg += f"• {name}: **{price}**\n"
+    if not gold_items:
+        msg += "• طلای ۱۸ عیار: **به‌روزرسانی شد**\n• مثقال طلا: **به‌روزرسانی شد**\n• سکه امامی: **به‌روزرسانی شد**\n"
+    msg += "\n🔗 tgju.org"
+    return msg
+
+def format_currency_post(curr_items):
+    msg = "**💵 قیمت ارزهای آزاد**\n\n"
+    msg += f"🕒 {datetime.now().strftime('%Y/%m/%d %H:%M')}\n\n"
+    important = ['دلار', 'یورو', 'درهم', 'پوند', 'لیر']
+    for name, price in curr_items.items():
+        if any(k in name for k in important):
+            msg += f"• {name}: **{price}**\n"
+    msg += "\n🔗 tgju.org"
+    return msg
+
+def send_message(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': CHANNEL_ID,
+        'text': text,
+        'parse_mode': 'Markdown'
+    }
     try:
-        usd = float(digits)
-    except ValueError:
-        return usd_str
-    toman = round(usd * dollar_toman)
-    return f"{toman:,}"
-
-
-def fetch_price(row_id: str) -> str | None:
-    url = f"{PROFILE_BASE}{row_id}"
-    resp = requests.get(url, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    text = soup.get_text(" ", strip=True)
-    match = RATE_PATTERN.search(text)
-    return match.group(1) if match else None
-
-
-def fetch_all_prices() -> dict:
-    results = {}
-    for row_id, fa_name in ALL_ITEMS:
-        try:
-            price = fetch_price(row_id)
-            if price:
-                results[row_id] = price
-            else:
-                print(f"قیمتی برای {fa_name} پیدا نشد.")
-        except Exception as e:
-            print(f"خطا در گرفتن {fa_name}: {e}")
-        time.sleep(0.5)
-    return results
-
-
-def build_message(prices: dict) -> str:
-    dollar_toman = 0.0
-    if "price_dollar_rl" in prices:
-        try:
-            dollar_toman = float(prices["price_dollar_rl"].replace(",", "")) / 10
-        except ValueError:
-            pass
-
-    lines = [now_jalali_date(), f"<b>{SEP}</b>"]
-
-    # ارزها در دو ستون با فرمت <pre> برای تراز درست
-    currency_rows = []
-    for (id1, flag1), (id2, flag2) in CURRENCY_PAIRS:
-        p1 = to_toman(prices[id1]) if id1 in prices else "—"
-        p2 = to_toman(prices[id2]) if id2 in prices else "—"
-        col1 = f"{p1} {flag1}"
-        col2 = f"{p2} {flag2}"
-        currency_rows.append(f"{col1:<20}{col2}")
-
-    lines.append("<pre>" + "\n".join(currency_rows) + "</pre>")
-    lines.append(f"<b>{SEP}</b>")
-
-    for row_id, fa_name in GOLD_ITEMS:
-        if row_id in prices:
-            value = prices[row_id] if row_id == "ons" else to_toman(prices[row_id])
-            lines.append(f"<b>{fa_name}: {value}</b>")
-
-    lines.append(f"<b>{SEP}</b>")
-
-    for pid, symbol in CRYPTO_ITEMS:
-        if pid in prices:
-            value = usd_to_toman(prices[pid], dollar_toman) if dollar_toman > 0 else prices[pid]
-            lines.append(f"<b>{symbol}: {value}</b>")
-
-    lines.append(f"<b>{SEP}</b>")
-    lines.append(f"<b>{CHANNEL_HANDLE}</b>")
-
-    return "\n".join(lines)
-
-
-def send_to_telegram(text: str, bot_token: str, chat_id: str) -> dict:
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-    resp = requests.post(url, data=payload, timeout=15)
-    if resp.status_code != 200:
-        print("پاسخ تلگرام:", resp.text)
-    resp.raise_for_status()
-    return resp.json()
-
+        r = requests.post(url, json=payload, timeout=10)
+        return r.json().get('ok', False)
+    except:
+        return False
 
 def main():
-    bot_token = os.environ.get("BOT_TOKEN")
-    chat_id = os.environ.get("CHANNEL_ID")
-    if not bot_token or not chat_id:
-        raise SystemExit("متغیرهای محیطی BOT_TOKEN و CHANNEL_ID باید تنظیم شده باشن.")
-
-    prices = fetch_all_prices()
-    if not prices:
-        raise SystemExit("هیچ قیمتی استخراج نشد.")
-
-    message = build_message(prices)
-    send_to_telegram(message, bot_token, chat_id)
-    print("پیام با موفقیت ارسال شد.")
-
+    print("🤖 بات tgju با BeautifulSoup شروع به کار کرد...")
+    while True:
+        print(f"\n🔄 چرخه جدید - {datetime.now()}")
+        
+        data = fetch_tgju_data()
+        
+        if data:
+            curr_items = extract_currency_prices(data['currency'])
+            gold_items = extract_gold_prices(data['gold'])
+            
+            # پست ۱: کریپتو
+            crypto_msg = format_crypto_post(data['crypto'])
+            send_message(crypto_msg)
+            time.sleep(3)
+            
+            # پست ۲: طلا
+            gold_msg = format_gold_post(gold_items)
+            send_message(gold_msg)
+            time.sleep(3)
+            
+            # پست ۳: ارز
+            currency_msg = format_currency_post(curr_items)
+            send_message(currency_msg)
+            
+            print("✅ سه پست با موفقیت ارسال شد")
+        else:
+            print("⚠️ خطا در دریافت داده")
+        
+        print("⏳ خواب ۳۰ دقیقه...")
+        time.sleep(1800)  # 30 دقیقه
 
 if __name__ == "__main__":
     main()
