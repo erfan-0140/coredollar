@@ -22,4 +22,5 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          BRS_API_KEY: ${{ secrets.BRS_API_KEY }}
         run: python tgju_telegram_bot.py
