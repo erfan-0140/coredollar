@@ -197,4 +197,22 @@ def post_currency(prices):
 def main():
     logging.info("دریافت قیمت‌های tgju...")
     tgju_ids = list(dict.fromkeys(
-        [
+        [k for k, _ in CUR_LEFT] +
+        [k for k, _ in CUR_RIGHT] +
+        [k for k, _ in METALS] +
+        [k for k, _ in COINS] +
+        [cid for cid, _ in (CRYPTO_RED + CRYPTO_YELLOW + CRYPTO_GREEN)]
+    ))
+    prices = fetch_tgju(tgju_ids)
+
+    logging.info("ارسال پست‌ها...")
+    send(post_crypto(prices))
+    time.sleep(1)
+    send(post_metals_and_coins(prices))
+    time.sleep(1)
+    send(post_currency(prices))
+    logging.info("✅ هر سه پست ارسال شد.")
+
+
+if __name__ == "__main__":
+    main()
