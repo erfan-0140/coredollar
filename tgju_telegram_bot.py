@@ -1,19 +1,62 @@
 import os, re, time, requests, jdatetime, logging
 from bs4 import BeautifulSoup
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
 
 # ─── تنظیمات ────────────────────────────────────────────────────────────────
-TEHRAN_TZ = ZoneInfo("Asia/Tehran")
+TEHRAN_TZ = timezone(timedelta(hours=3, minutes=30))
+
+# خواندن امن توکن و شناسه کانال از Environment Variables
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
+
+if not BOT_TOKEN or not CHANNEL_ID:
+    raise SystemExit("❌ BOT_TOKEN و CHANNEL_ID باید در Environment Variables تنظیم شوند.")
+
 CHANNEL_LINK = "@coredollar"
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHANNEL_ID = os.getenv("CHANNEL_ID", "")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 RATE_RE = re.compile(r"نرخ فعلی[:\s]*([\d,]+(?:\.\d+)?)")
 SEP = "┄" * 22
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+# ─── ارزها ───────────────────────────────────────────────────────────────────
+CUR_LEFT = [
+    ("price_dollar_rl","🇺🇸"), ("price_gbp","🇬🇧"),
+    ("price_try","🇹🇷"),       ("price_cad","🇨🇦"),
+    ("price_iqd","🇮🇶"),       ("price_sek","🇸🇪"),
+    ("price_myr","🇲🇾"),       ("price_amd","🇦🇲"),
+    ("price_gel","🇬🇪"),       ("price_qar","🇶🇦"),
+]
+CUR_RIGHT = [
+    ("price_eur","🇪🇺"),  ("price_aed","🇦🇪"),
+    ("price_cny","🇨🇳"),  ("price_aud","🇦🇺"),
+    ("price_rub","🇷🇺"),  ("price_sar","🇸🇦"),
+    ("price_thb","🇹🇭"),  ("price_azn","🇦🇿"),
+    ("price_afn","🇦🇫"),  ("price_omr","🇴🇲"),
+]
+
+# ─── طلا و سکه ───────────────────────────────────────────────────────────────
+METALS = [
+    ("ons",      "💛 انس جهانی طلا"),
+    ("mesghal",  "💛 مثقال طلا"),
+    ("geram18",  "💛 طلای ۱۸ عیار (هر گرم)"),
+    ("geram24",  "💛 طلای ۲۴ عیار (هر گرم)"),
+    ("silver_999","🩶 گرم نقره ۹۹۹"),
+]
+COINS = [
+    ("sekee",       "habbab-sekee",  "سکه امامی"),
+    ("sekeb",       "habbab-sekeb",  "سکه بهار آزادی"),
+    ("nim",         "habbab-nim",    "نیم سکه"),
+    ("rob",         "habbab-rob",    "ربع سکه"),
+    ("seke-gerami", "habbab-gerami", "سکه گرمی"),
+]
+
+# ─── کریپتو ───────────────────────────────────────────────────────────────
+COL1 = [("tether","تتر"), ("bitcoin","بیتکوین"), ("ethereum","اتریوم"), ("cardano","کاردانو"), ("shiba-inu","شیبا")]
+COL2 = [("the-open-network","گرام"), ("binancecoin","بایننس"), ("stellar","استلار"), ("ripple","ریپل"), ("dogecoin","دوج")]
+COL3 = [("tron","ترون"), ("solana","سولانا"), ("ethereum-classic","ETC"), ("chainlink","LINK"), ("tether-gold","تترگلد")]
+COL4 = [("litecoin","لایت"), ("avalanche-2","آوالانچ"), ("zcash","زدکش"), ("monero","مونرو"), ("pi-network","پای")]
 
 # ─── توابع کمکی ──────────────────────────────────────────────────────────────
 def safe_float(s):
@@ -32,12 +75,6 @@ def fmt(s):
         return "—"
     return f"{v:,.2f}" if v < 100 else f"{round(v):,}"
 
-def jalali_now():
-    g = datetime.now(TEHRAN_TZ)
-    j = jdatetime.datetime.fromgregorian(datetime=g)
-    return f"{j.day} {['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'][j.month-1]} {j.year}"
-
-# ─── Scraping پایدارتر ───────────────────────────────────────────────────────
 def scrape(row_id):
     url = f"https://www.tgju.org/profile/{row_id}"
     try:
@@ -61,7 +98,6 @@ def fetch_tgju(ids):
         time.sleep(0.3)
     return out
 
-# ─── CoinGecko ───────────────────────────────────────────────────────────────
 def fetch_crypto(dollar_toman):
     ids = [c for col in (COL1, COL2, COL3, COL4) for c, _ in col]
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={','.join(ids)}&vs_currencies=usd"
@@ -83,7 +119,6 @@ def fetch_crypto(dollar_toman):
         out[cid] = f"{round(usd * dollar_toman):,}" if dollar_toman else fmt(usd)
     return out
 
-# ─── Telegram ────────────────────────────────────────────────────────────────
 def send(text):
     try:
         r = requests.post(
@@ -95,7 +130,6 @@ def send(text):
     except Exception as e:
         logging.error(f"[TG] خطا در ارسال پیام: {e}")
 
-# ─── ساخت پست‌ها (بدون تغییر ظاهر) ──────────────────────────────────────────
 def post_currency(prices):
     lines = [f"<b>💵 ارزهای آزاد</b>", f"<b>{SEP}</b>"]
     rows = []
@@ -133,11 +167,8 @@ def post_crypto(cprices):
     lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
-# ─── اجرا ────────────────────────────────────────────────────────────────────
 def main():
-    if not BOT_TOKEN or not CHANNEL_ID:
-        raise SystemExit("BOT_TOKEN و CHANNEL_ID باید تنظیم شده باشن.")
-
+    logging.info("دریافت قیمت‌های tgju...")
     tgju_ids = list(dict.fromkeys(
         [k for k, _ in CUR_LEFT] +
         [k for k, _ in CUR_RIGHT] +
@@ -145,8 +176,6 @@ def main():
         [ck for ck, _, _ in COINS] +
         [bk for _, bk, _ in COINS]
     ))
-
-    logging.info("دریافت قیمت‌های tgju...")
     prices = fetch_tgju(tgju_ids)
 
     dollar_raw = prices.get("price_dollar_rl")
