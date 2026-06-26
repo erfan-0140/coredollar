@@ -35,14 +35,16 @@ CUR_RIGHT = [
     ("price_afn","🇦🇫"),  ("price_omr","🇴🇲"),
 ]
 
+# ─── فلزات ───────────────────────────────────────────────────
 METALS = [
-    ("ons",      "💛 انس جهانی طلا"),
     ("mesghal",  "💛 مثقال طلا"),
+    ("ons",      "💛 انس جهانی طلا"),
     ("geram18",  "💛 طلای ۱۸ عیار (هر گرم)"),
     ("geram24",  "💛 طلای ۲۴ عیار (هر گرم)"),
-    ("silver_999","🩶 گرم نقره ۹۹۹"),
+    ("silver_999","🩶 نقره ۹۹۹"),
 ]
 
+# ─── سکه‌ها ──────────────────────────────────────────────────
 COINS = [
     ("sekee",       "سکه امامی"),
     ("sekeb",       "سکه بهار آزادی"),
@@ -51,7 +53,6 @@ COINS = [
     ("seke-gerami", "سکه گرمی"),
 ]
 
-# وزن‌ها طبق چیزی که خودت دادی
 WEIGHTS = {
     "sekee":       8.133,
     "sekeb":       8.133,
@@ -60,11 +61,32 @@ WEIGHTS = {
     "seke-gerami": 1.01,
 }
 
-# کریپتو
-COL1 = [("tether","تتر"), ("bitcoin","بیتکوین"), ("ethereum","اتریوم"), ("cardano","کاردانو"), ("shiba-inu","شیبا")]
-COL2 = [("the-open-network","گرام"), ("binancecoin","بایننس"), ("stellar","استلار"), ("ripple","ریپل"), ("dogecoin","دوج")]
-COL3 = [("tron","ترون"), ("solana","سولانا"), ("ethereum-classic","ETC"), ("chainlink","LINK"), ("tether-gold","تترگلد")]
-COL4 = [("litecoin","لایت"), ("avalanche-2","آوالانچ"), ("zcash","زدکش"), ("monero","مونرو"), ("pi-network","پای")]
+# ─── کریپتو از tgju ──────────────────────────────────────────
+CRYPTO_RED = [
+    ("tether", "تتر"),
+    ("bitcoin", "بیت‌کوین"),
+    ("ethereum", "اتریوم"),
+    ("cardano", "کاردانو"),
+    ("the-open-network", "گرام"),
+    ("tron", "ترون"),
+]
+
+CRYPTO_YELLOW = [
+    ("binancecoin", "بایننس"),
+    ("solana", "سولان"),
+    ("avalanche-2", "آوالانچ"),
+    ("stellar", "استلار"),
+    ("zcash", "زدکش"),
+]
+
+CRYPTO_GREEN = [
+    ("ripple", "ریپل"),
+    ("chainlink", "چین لینک"),
+    ("monero", "مونرو"),
+    ("dogecoin", "دوج"),
+    ("tether-gold", "تترگلد"),
+    ("litecoin", "لایت"),
+]
 
 # ─── توابع کمکی ──────────────────────────────────────────────
 def safe_float(s):
@@ -77,27 +99,16 @@ def toman(s):
     v = safe_float(s)
     return f"{round(v/10):,}" if v else "—"
 
-def fmt(s):
-    v = safe_float(s)
-    if v is None:
-        return "—"
-    return f"{v:,.2f}" if v < 100 else f"{round(v):,}"
-
 def scrape(row_id):
     url = f"https://www.tgju.org/profile/{row_id}"
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
-
-        # تلاش برای پیدا کردن عدد اصلی
-        # اگر ساختار عوض شده باشد، Regex کمک می‌کند
         text = soup.get_text(" ", strip=True)
         m = RATE_RE.search(text)
         if m:
             return m.group(1)
-
-        # fallback ساده: اولین عدد بزرگ
         nums = re.findall(r"[\d,]+(?:\.\d+)?", text)
         return nums[0] if nums else None
     except Exception as e:
@@ -115,31 +126,7 @@ def fetch_tgju(ids):
         time.sleep(0.3)
     return out
 
-def fetch_crypto(dollar_toman):
-    ids = [c for col in (COL1, COL2, COL3, COL4) for c, _ in col]
-    url = f"https://api.coingecko.com/api/v3/simple/price?ids={','.join(ids)}&vs_currencies=usd"
-
-    try:
-        r = requests.get(url, timeout=12)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        logging.error(f"[CG] خطا: {e}")
-        return {}
-
-    out = {}
-    for cid in ids:
-        usd = data.get(cid, {}).get("usd")
-        if usd is None:
-            out[cid] = "N/A"
-            continue
-        out[cid] = f"{round(usd * dollar_toman):,}" if dollar_toman else fmt(usd)
-    return out
-
 def calc_habab(coin_price, gold18_price, weight):
-    """
-    حباب = قیمت سکه – (قیمت گرم ۱۸ × 1.2 × وزن)
-    """
     cp = safe_float(coin_price)
     gp = safe_float(gold18_price)
     if cp is None or gp is None:
@@ -159,7 +146,42 @@ def send(text):
     except Exception as e:
         logging.error(f"[TG] خطا در ارسال پیام: {e}")
 
-# ─── ساخت متن‌ها ─────────────────────────────────────────────
+# ─── ساخت پیام‌ها ────────────────────────────────────────────
+def post_crypto(prices):
+    lines = [f"<b>🌕 کریپتوکارنسی</b>", f"<b>{SEP}</b>"]
+
+    def section(color, items):
+        for cid, name in items:
+            val = prices.get(cid, "N/A")
+            lines.append(f"<b>{val} — {name}</b> {color}")
+        lines.append("")
+
+    section("🔴", CRYPTO_RED)
+    section("🟡", CRYPTO_YELLOW)
+    section("🟢", CRYPTO_GREEN)
+
+    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
+    return "\n".join(lines)
+
+def post_metals_and_coins(prices):
+    lines = [f"<b>🏅 طلا و سکه + حباب</b>", f"<b>{SEP}</b>"]
+
+    # فلزات به ترتیب خواسته‌شده
+    for k, fa in METALS:
+        v = prices.get(k)
+        lines.append(f"<b>{fa}: {toman(v)}</b>")
+
+    lines.append(f"<b>{SEP}</b>")
+
+    gold18 = prices.get("geram18")
+    for key, name in COINS:
+        coin_price = prices.get(key)
+        habab = calc_habab(coin_price, gold18, WEIGHTS.get(key, 0))
+        lines.append(f"<b>🟠 {name}: {toman(coin_price)}    🫧 حباب: {toman(habab)}</b>")
+
+    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
+    return "\n".join(lines)
+
 def post_currency(prices):
     lines = [f"<b>💵 ارزهای آزاد</b>", f"<b>{SEP}</b>"]
     rows = []
@@ -171,66 +193,8 @@ def post_currency(prices):
     lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
-def post_metals_and_coins(prices):
-    lines = [f"<b>🏅 طلا و سکه + حباب</b>", f"<b>{SEP}</b>"]
-
-    # فلزات
-    for k, fa in METALS:
-        if k in prices:
-            v = prices[k] if k == "ons" else toman(prices.get(k))
-            lines.append(f"<b>{fa}: {v}</b>")
-
-    lines.append(f"<b>{SEP}</b>")
-
-    gold18 = prices.get("geram18")
-    # سکه‌ها + حباب
-    for key, name in COINS:
-        coin_price = prices.get(key)
-        habab = calc_habab(coin_price, gold18, WEIGHTS.get(key, 0))
-        coin_str = toman(coin_price)
-        habab_str = toman(habab) if habab is not None else "—"
-        lines.append(f"<b>🟠 {name}: {coin_str}    🫧 حباب: {habab_str}</b>")
-
-    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
-    return "\n".join(lines)
-
-def post_crypto(cprices):
-    lines = [f"<b>🪙 کریپتوکارنسی</b>", f"<b>{SEP}</b>"]
-    for i in range(5):
-        for emoji, col in [("🔴", COL1), ("🟡", COL2), ("🟢", COL3), ("⚪️", COL4)]:
-            cid, name = col[i]
-            v = cprices.get(cid, "N/A")
-            lines.append(f"<b>{emoji} {name}: {v}</b>")
-        if i < 4:
-            lines.append("")
-    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
-    return "\n".join(lines)
-
 # ─── main ────────────────────────────────────────────────────
 def main():
     logging.info("دریافت قیمت‌های tgju...")
     tgju_ids = list(dict.fromkeys(
-        [k for k, _ in CUR_LEFT] +
-        [k for k, _ in CUR_RIGHT] +
-        [k for k, _ in METALS] +
-        [k for k, _ in COINS]
-    ))
-    prices = fetch_tgju(tgju_ids)
-
-    dollar_raw = prices.get("price_dollar_rl")
-    dollar_toman = safe_float(dollar_raw) / 10 if dollar_raw else 0
-    logging.info(f"نرخ دلار: {dollar_toman:,.0f} تومان")
-
-    logging.info("دریافت قیمت‌های کریپتو...")
-    cprices = fetch_crypto(dollar_toman)
-
-    logging.info("ارسال پست‌ها...")
-    send(post_crypto(cprices))
-    time.sleep(1)
-    send(post_metals_and_coins(prices))
-    time.sleep(1)
-    send(post_currency(prices))
-    logging.info("✅ هر سه پست ارسال شد.")
-
-if __name__ == "__main__":
-    main()
+        [
