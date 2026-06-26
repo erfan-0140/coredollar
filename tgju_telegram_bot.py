@@ -112,7 +112,9 @@ def safe_float(s):
 
 def toman(s):
     v = safe_float(s)
-    return f"{round(v/10):,}" if v else "—"
+    if v is None:
+        return "—"
+    return f"{round(v/10):,}"
 
 def scrape(row_id):
     url = f"https://www.tgju.org/profile/{row_id}"
@@ -127,10 +129,10 @@ def scrape(row_id):
             return m.group(1)
 
         nums = re.findall(r"[\d,]+", text)
-        return nums[0] if nums else None
+        return nums[0] if nums else "—"
 
     except:
-        return None
+        return "—"
 
 def fetch_tgju(ids):
     out = {}
@@ -166,7 +168,7 @@ def post_crypto(prices):
 
     def block(color, items):
         for cid, name in items:
-            val = prices.get(cid, "—")
+            val = toman(prices.get(cid))
             lines.append(f"<b>{val}</b> {color} {name}")
         lines.append("")
 
