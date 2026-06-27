@@ -1,8 +1,8 @@
 """
-بات قیمت ارز، طلا و کریپتو — نسخه حرفه‌ای
-منبع: tgju.org (scraping موازی) + CoinGecko (قیمت USD کریپتو)
-تبدیل کریپتو: USD × قیمت تتر از tgju (نه دلار بازار آزاد)
-حباب سکه: محاسباتی با فرمول دقیق
+بات قیمت ارز، طلا و کریپتو
+- ارز و طلا: tgju.org (scraping موازی)
+- کریپتو: CoinGecko (USD) × نرخ دلار tgju (تومان)
+- حباب سکه: محاسباتی
 """
 
 import os
@@ -34,7 +34,7 @@ PRICE_PATTERNS = [
     re.compile(r"قیمت لحظه.ای[:\s]*([\d,]+(?:\.\d+)?)"),
     re.compile(r'"price"\s*:\s*"?([\d,]+(?:\.\d+)?)"?'),
 ]
-SEP = "┄" * 22
+SEP = "<b>" + "┄" * 16 + "</b>"
 
 JALALI_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور",
                   "مهر","آبان","آذر","دی","بهمن","اسفند"]
@@ -57,16 +57,16 @@ CUR_PAIRS = [
     (("price_qar",      "🇶🇦"), ("price_omr",  "🇴🇲")),
 ]
 
-# ─── طلا و نقره ──────────────────────────────────────────────────────────────
+# ─── فلزات ───────────────────────────────────────────────────────────────────
 METALS = [
-    ("ons",        "💛 انس جهانی طلا",     False),  # دلار جهانی
-    ("mesghal",    "💛 مثقال طلا",           True),
-    ("geram18",    "💛 طلای ۱۸ عیار (گرم)", True),
-    ("geram24",    "💛 طلای ۲۴ عیار (گرم)", True),
-    ("silver_999", "🩶 نقره ۹۹۹ (گرم)",     True),
+    ("ons",        "💛 انس جهانی طلا",      False),
+    ("mesghal",    "💛 مثقال طلا",            True),
+    ("geram18",    "💛 طلای ۱۸ عیار (گرم)",  True),
+    ("geram24",    "💛 طلای ۲۴ عیار (گرم)",  True),
+    ("silver_999", "🩶 نقره ۹۹۹ (گرم)",      True),
 ]
 
-# ─── سکه ── حباب با فرمول محاسبه میشه ───────────────────────────────────────
+# ─── سکه ── (tgju_id، وزن گرم، نام) ─────────────────────────────────────────
 COINS = [
     ("sekee",       8.133,   "سکه امامی"),
     ("sekeb",       8.133,   "سکه بهار آزادی"),
@@ -75,11 +75,8 @@ COINS = [
     ("seke-gerami", 1.01,    "سکه گرمی"),
 ]
 
-# ─── کریپتو ── ۳ گروه × ۶ = ۱۸ ارز ──────────────────────────────────────────
-# قیمت USD از CoinGecko × قیمت تتر از tgju = تومان
-# شیبا و پای حذف شدن
+# ─── کریپتو ── ۳ گروه × ۶ ───────────────────────────────────────────────────
 CRYPTOS = [
-    # (CoinGecko ID، نام فارسی، گروه رنگی)
     ("tether",           "تتر",            "🔴"),
     ("bitcoin",          "بیتکوین",        "🔴"),
     ("ethereum",         "اتریوم",         "🔴"),
@@ -113,8 +110,7 @@ def to_toman(s) -> str:
 
 def fmt_num(s) -> str:
     v = safe_float(s)
-    if v is None:
-        return "—"
+    if v is None: return "—"
     return f"{v:,.2f}" if v < 100 else f"{round(v):,}"
 
 def jalali_now() -> str:
@@ -125,15 +121,15 @@ def jalali_now() -> str:
     return f"{d} {JALALI_MONTHS[j.month - 1]} {y}"
 
 def calc_bubble(coin_rial: str, geram18_rial: str, weight: float) -> str:
-    """حباب = قیمت سکه (تومان) − (گرم۱۸ × ۱.۲ × وزن)"""
+    """حباب = قیمت سکه تومان − (گرم۱۸ تومان × ۱.۲ × وزن)"""
     coin = safe_float(coin_rial)
     g18  = safe_float(geram18_rial)
-    if coin is None or g18 is None:
-        return "—"
+    if coin is None or g18 is None: return "—"
     bubble = round(coin / 10 - g18 / 10 * 1.2 * weight)
-    return f"{'+' if bubble >= 0 else ''}{bubble:,}"
+    sign   = "+" if bubble >= 0 else ""
+    return f"{sign}{bubble:,}"
 
-# ─── دریافت داده‌های tgju ─────────────────────────────────────────────────────
+# ─── scraping tgju ───────────────────────────────────────────────────────────
 def scrape_one(row_id: str, retries: int = 2) -> tuple[str, Optional[str]]:
     url = f"https://www.tgju.org/profile/{row_id}"
     for attempt in range(retries + 1):
@@ -164,14 +160,10 @@ def fetch_tgju_parallel(ids: list, workers: int = 10) -> dict:
                 results[rid] = val
     return results
 
-def fetch_crypto_prices(usdt_toman: float) -> dict:
-    """
-    قیمت کریپتو از CoinGecko (USD) × قیمت تتر (تومان از tgju) = تومان
-    یک درخواست برای همه، با retry و مدیریت rate limit.
-    """
-    ids_str = ",".join(c[0] for c in CRYPTOS)
-    url     = (f"https://api.coingecko.com/api/v3/simple/price"
-               f"?ids={ids_str}&vs_currencies=usd")
+def fetch_crypto(dollar_toman: float) -> dict:
+    """CoinGecko USD × نرخ دلار tgju = تومان"""
+    ids = ",".join(c[0] for c in CRYPTOS)
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd"
     for attempt in range(3):
         try:
             r = requests.get(url, timeout=20)
@@ -187,8 +179,8 @@ def fetch_crypto_prices(usdt_toman: float) -> dict:
                 usd = data.get(cid, {}).get("usd")
                 if usd is None:
                     out[cid] = "—"
-                elif usdt_toman > 0:
-                    out[cid] = f"{round(float(usd) * usdt_toman):,}"
+                elif dollar_toman > 0:
+                    out[cid] = f"{round(float(usd) * dollar_toman):,}"
                 else:
                     out[cid] = fmt_num(usd) + " $"
             return out
@@ -210,89 +202,79 @@ def send(text: str):
 
 # ─── ساخت پست کریپتو ─────────────────────────────────────────────────────────
 def post_crypto(cp: dict) -> str:
-    lines    = [f"<b>🪙 کریپتوکارنسی</b>", f"<b>{SEP}</b>"]
+    lines    = [f"<b>🪙 کریپتوکارنسی</b>", SEP]
     prev_grp = None
     for cid, name, grp in CRYPTOS:
         if prev_grp and grp != prev_grp:
-            lines.append("")          # خط خالی بین گروه‌ها
-        v = cp.get(cid, "—")
-        lines.append(f"<b>{grp} {name}: {v}</b>")
+            lines.append("")
+        lines.append(f"<b>{grp} {name}: {cp.get(cid, '—')}</b>")
         prev_grp = grp
-    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
+    lines += [SEP, f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
 # ─── ساخت پست فلزات ──────────────────────────────────────────────────────────
 def post_metals(prices: dict) -> str:
     g18_rial = prices.get("geram18")
-    lines    = [f"<b>🏅 فلزات گرانبها</b>", f"<b>{SEP}</b>"]
+    lines    = [f"<b>🏅 فلزات گرانبها</b>", SEP]
 
     for k, fa, is_rial in METALS:
-        if k not in prices:
-            continue
+        if k not in prices: continue
         v = to_toman(prices[k]) if is_rial else fmt_num(prices[k])
         lines.append(f"<b>{fa}: {v}</b>")
 
-    lines.append(f"<b>{SEP}</b>")
+    lines.append(SEP)
 
     for cid, weight, name in COINS:
-        if cid not in prices:
-            continue
+        if cid not in prices: continue
         price  = to_toman(prices[cid])
         bubble = calc_bubble(prices[cid], g18_rial, weight) if g18_rial else "—"
-        lines.append(f"<b>🟠 {name}</b>")
-        lines.append(f"<b>   قیمت: {price}   🫧 حباب: {bubble}</b>")
+        lines.append(f"<b>🟠 {name}: {price}  🫧 {bubble}</b>")
 
-    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
+    lines += [SEP, f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
 # ─── ساخت پست ارزها ──────────────────────────────────────────────────────────
 def post_currency(prices: dict) -> str:
-    lines = [f"<b>💵 ارزهای آزاد</b>", f"<b>{SEP}</b>"]
+    lines = [f"<b>💵 ارزهای آزاد</b>", SEP]
     rows  = []
     for (k1, f1), (k2, f2) in CUR_PAIRS:
-        p1 = to_toman(prices.get(k1, ""))  if k1 in prices else "—"
-        p2 = to_toman(prices.get(k2, ""))  if k2 in prices else "—"
-        # ستون چپ: پرچم + قیمت راست‌چین در ۱۰ کاراکتر
-        # ستون راست: قیمت چپ‌چین + پرچم
+        p1 = to_toman(prices[k1]) if k1 in prices else "—"
+        p2 = to_toman(prices[k2]) if k2 in prices else "—"
         rows.append(f"{f1} {p1:>12}    {p2:<12} {f2}")
     lines.append("<pre>" + "\n".join(rows) + "</pre>")
-    lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
+    lines += [SEP, f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
 # ─── اجرا ────────────────────────────────────────────────────────────────────
 def main():
     t0 = time.time()
 
-    # همه آیتم‌های tgju
     tgju_ids = list(dict.fromkeys(
         [k for pair in CUR_PAIRS for k, _ in pair]
         + [k for k, _, _ in METALS]
         + [cid for cid, _, _ in COINS]
-        + ["crypto-tether"]   # برای قیمت USDT به تومان
     ))
 
     log.info(f"⬇ دریافت موازی {len(tgju_ids)} آیتم از tgju...")
     prices = fetch_tgju_parallel(tgju_ids, workers=10)
-    log.info(f"  ✓ {len(prices)}/{len(tgju_ids)} آیتم ({time.time() - t0:.1f}s)")
+    log.info(f"  ✓ {len(prices)}/{len(tgju_ids)} آیتم ({time.time()-t0:.1f}s)")
 
-    # قیمت تتر به تومان برای تبدیل کریپتو
-    usdt_toman = 0.0
-    usdt_raw   = prices.get("crypto-tether")
-    if usdt_raw:
-        usdt_toman = (safe_float(usdt_raw) or 0) / 10
-        log.info(f"  تتر: {usdt_toman:,.0f} تومان")
+    dollar_raw   = prices.get("price_dollar_rl")
+    dollar_toman = (safe_float(dollar_raw) / 10) if dollar_raw else 0.0
+    if dollar_toman:
+        log.info(f"  دلار: {dollar_toman:,.0f} تومان")
     else:
-        log.warning("  ⚠ قیمت تتر دریافت نشد — کریپتو به دلار نمایش داده می‌شود")
+        log.warning("  ⚠ نرخ دلار دریافت نشد")
 
-    log.info("⬇ دریافت قیمت کریپتو از CoinGecko...")
-    cp = fetch_crypto_prices(usdt_toman)
-    log.info(f"  ✓ {len(cp)}/{len(CRYPTOS)} کریپتو ({time.time() - t0:.1f}s)")
+    log.info("⬇ دریافت کریپتو از CoinGecko...")
+    cp = fetch_crypto(dollar_toman)
+    log.info(f"  ✓ {len(cp)}/{len(CRYPTOS)} کریپتو ({time.time()-t0:.1f}s)")
 
     log.info("📤 ارسال پست‌ها...")
     send(post_crypto(cp));      time.sleep(1)
     send(post_metals(prices));  time.sleep(1)
     send(post_currency(prices))
-    log.info(f"✅ هر سه پست ارسال شد ({time.time() - t0:.1f}s)")
+    log.info(f"✅ هر سه پست ارسال شد ({time.time()-t0:.1f}s)")
 
 if __name__ == "__main__":
     main()
