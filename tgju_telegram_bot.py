@@ -1,6 +1,6 @@
 """
 بات قیمت ارز، طلا و کریپتو — نسخه حرفه‌ای
-منابع: tgju.org (scraping موازی) + CoinGecko API
+منبع: tgju.org (scraping موازی برای همه آیتم‌ها)
 حباب سکه: محاسباتی (نه scraping)
 """
 
@@ -82,28 +82,29 @@ COINS = [
 ]
 
 # ─── کریپتو ──────────────────────────────────────────────────────────────────
-# (CoinGecko ID، نام فارسی، ایموجی ستون)
+# (tgju profile ID، نام فارسی، ایموجی گروه)
+# قیمت‌ها مستقیم از tgju به ریال ایران — تبدیل به تومان با to_toman()
 CRYPTOS = [
-    ("tether",           "تتر",      "🔴"),
-    ("bitcoin",          "بیتکوین",  "🔴"),
-    ("ethereum",         "اتریوم",   "🔴"),
-    ("cardano",          "کاردانو",  "🔴"),
-    ("shiba-inu",        "شیبا",     "🔴"),
-    ("the-open-network", "گرام",     "🟡"),
-    ("binancecoin",      "بایننس",   "🟡"),
-    ("stellar",          "استلار",   "🟡"),
-    ("ripple",           "ریپل",     "🟡"),
-    ("dogecoin",         "دوج",      "🟡"),
-    ("tron",             "ترون",     "🟢"),
-    ("solana",           "سولانا",   "🟢"),
-    ("ethereum-classic", "ETC",      "🟢"),
-    ("chainlink",        "LINK",     "🟢"),
-    ("tether-gold",      "تترگلد",   "🟢"),
-    ("litecoin",         "لایت",     "⚪️"),
-    ("avalanche-2",      "آوالانچ",  "⚪️"),
-    ("zcash",            "زدکش",     "⚪️"),
-    ("monero",           "مونرو",    "⚪️"),
-    ("pi-network",       "پای",      "⚪️"),
+    ("crypto-tether",           "تتر",              "🔴"),
+    ("crypto-bitcoin",          "بیتکوین",          "🔴"),
+    ("crypto-ethereum",         "اتریوم",           "🔴"),
+    ("crypto-cardano",          "کاردانو",          "🔴"),
+    ("crypto-shiba-inu",        "شیبا",             "🔴"),
+    ("crypto-gram",             "گرام",             "🟡"),
+    ("crypto-binancecoin",      "بایننس",           "🟡"),
+    ("crypto-stellar",          "استلار",           "🟡"),
+    ("crypto-ripple",           "ریپل",             "🟡"),
+    ("crypto-dogecoin",         "دوج",              "🟡"),
+    ("crypto-tron",             "ترون",             "🟢"),
+    ("crypto-solana",           "سولانا",           "🟢"),
+    ("crypto-ethereum-classic", "اتریوم کلاسیک",   "🟢"),
+    ("crypto-chainlink",        "چین‌لینک",         "🟢"),
+    ("crypto-tether-gold",      "تترگلد",           "🟢"),
+    ("crypto-litecoin",         "لایت‌کوین",        "⚪️"),
+    ("crypto-avalanche-2",      "آوالانچ",          "⚪️"),
+    ("crypto-zcash",            "زدکش",             "⚪️"),
+    ("crypto-monero",           "مونرو",            "⚪️"),
+    ("crypto-pi-network",       "پای",              "⚪️"),
 ]
 
 # ─── توابع کمکی ──────────────────────────────────────────────────────────────
@@ -181,38 +182,7 @@ def fetch_tgju_parallel(ids: list, workers: int = 8) -> dict:
                 results[rid] = val
     return results
 
-def fetch_crypto(dollar_toman: float) -> dict:
-    """قیمت کریپتو از CoinGecko — یک درخواست برای همه، با retry."""
-    ids_str = ",".join(c[0] for c in CRYPTOS)
-    url = (
-        f"https://api.coingecko.com/api/v3/simple/price"
-        f"?ids={ids_str}&vs_currencies=usd"
-    )
-    for attempt in range(3):
-        try:
-            r = requests.get(url, timeout=20)
-            if r.status_code == 429:
-                wait = int(r.headers.get("Retry-After", 60))
-                log.warning(f"  CoinGecko rate limit — {wait}s صبر...")
-                time.sleep(wait)
-                continue
-            r.raise_for_status()
-            data = r.json()
-            out = {}
-            for cid, _, _ in CRYPTOS:
-                usd = data.get(cid, {}).get("usd")
-                if usd is None:
-                    out[cid] = "N/A"
-                    continue
-                if dollar_toman > 0:
-                    out[cid] = f"{round(float(usd) * dollar_toman):,}"
-                else:
-                    out[cid] = fmt_num(usd) + " $"
-            return out
-        except Exception as e:
-            log.error(f"  CoinGecko خطا (تلاش {attempt + 1}): {e}")
-            time.sleep(5 * (attempt + 1))
-    return {}
+
 
 def send(text: str):
     """ارسال پیام به تلگرام."""
@@ -227,11 +197,16 @@ def send(text: str):
         log.error(f"  ❌ تلگرام خطا: {e}")
 
 # ─── ساخت پست‌ها ─────────────────────────────────────────────────────────────
-def post_crypto(cp: dict) -> str:
+def post_crypto(prices: dict) -> str:
     lines = [f"<b>🪙 کریپتوکارنسی</b>", f"<b>{SEP}</b>"]
+    prev_emoji = None
     for cid, name, emoji in CRYPTOS:
-        v = cp.get(cid, "N/A")
+        # اینتر بین گروه‌های رنگی
+        if prev_emoji is not None and emoji != prev_emoji:
+            lines.append("")
+        v = to_toman(prices[cid]) if cid in prices else "—"
         lines.append(f"<b>{emoji} {name}: {v}</b>")
+        prev_emoji = emoji
     lines += [f"<b>{SEP}</b>", f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
 
@@ -274,26 +249,16 @@ def main():
         [k for k, _ in CURRENCIES]
         + [k for k, _, _ in METALS]
         + [cid for cid, _, _ in COINS]
+        + [cid for cid, _, _ in CRYPTOS]
     ))
 
     log.info(f"⬇ دریافت موازی {len(tgju_ids)} آیتم از tgju...")
-    prices = fetch_tgju_parallel(tgju_ids, workers=8)
+    prices = fetch_tgju_parallel(tgju_ids, workers=10)
     log.info(f"  ✓ {len(prices)}/{len(tgju_ids)} آیتم ({time.time() - t0:.1f}s)")
 
-    dollar_raw   = prices.get("price_dollar_rl")
-    dollar_toman = (safe_float(dollar_raw) / 10) if dollar_raw else 0.0
-    if dollar_toman:
-        log.info(f"  دلار: {dollar_toman:,.0f} تومان")
-    else:
-        log.warning("  ⚠ نرخ دلار دریافت نشد — کریپتو به دلار نمایش داده می‌شود")
-
-    log.info("⬇ دریافت کریپتو از CoinGecko...")
-    cp = fetch_crypto(dollar_toman)
-    log.info(f"  ✓ {len(cp)}/{len(CRYPTOS)} کریپتو ({time.time() - t0:.1f}s)")
-
     log.info("📤 ارسال پست‌ها...")
-    send(post_crypto(cp));       time.sleep(1)
-    send(post_metals(prices));   time.sleep(1)
+    send(post_crypto(prices));     time.sleep(1)
+    send(post_metals(prices));     time.sleep(1)
     send(post_currency(prices))
     log.info(f"✅ هر سه پست ارسال شد ({time.time() - t0:.1f}s)")
 
