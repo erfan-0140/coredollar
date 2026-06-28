@@ -1,7 +1,7 @@
 """
 بات قیمت ارز، طلا و کریپتو
 - ارز و طلا: tgju.org (scraping موازی)
-- کریپتو: CoinGecko (USD) × نرخ دلار tgju (تومان)
+- کریپتو: CoinGecko (USD) × نرخ دلار tgju
 - حباب سکه: محاسباتی
 """
 
@@ -59,20 +59,20 @@ CUR_PAIRS = [
 
 # ─── فلزات ───────────────────────────────────────────────────────────────────
 METALS = [
-    ("ons",        "💛 انس",      False),
-    ("mesghal",    "💛 مثقال",    True),
-    ("geram18",    "💛 ۱۸ عیار",  True),
-    ("geram24",    "💛 ۲۴ عیار",  True),
-    ("silver_999", "🩶 نقره",     True),
+    ("ons",        "💛 انس",     False),
+    ("mesghal",    "💛 مثقال",   True),
+    ("geram18",    "💛 ۱۸ عیار", True),
+    ("geram24",    "💛 ۲۴ عیار", True),
+    ("silver_999", "🩶 نقره",    True),
 ]
 
 # ─── سکه ── (tgju_id، وزن گرم، نام) ─────────────────────────────────────────
 COINS = [
-    ("sekee",       8.133,   "امامی"),
-    ("sekeb",       8.133,   "بهار آزادی"),
-    ("nim",         4.0665,  "نیم سکه"),
-    ("rob",         2.03325, "ربع سکه"),
-    ("seke-gerami", 1.01,    "سکه گرمی"),
+    ("sekee",   8.133,   "امامی"),
+    ("sekeb",   8.133,   "بهار آزادی"),
+    ("nim",     4.0665,  "نیم سکه"),
+    ("rob",     2.03325, "ربع سکه"),
+    ("gerami",  1.01,    "سکه گرمی"),
 ]
 
 # ─── کریپتو ── ۳ گروه × ۶ ───────────────────────────────────────────────────
@@ -110,7 +110,8 @@ def to_toman(s) -> str:
 
 def fmt_num(s) -> str:
     v = safe_float(s)
-    if v is None: return "—"
+    if v is None:
+        return "—"
     return f"{v:,.2f}" if v < 100 else f"{round(v):,}"
 
 def jalali_now() -> str:
@@ -121,10 +122,11 @@ def jalali_now() -> str:
     return f"{d} {JALALI_MONTHS[j.month - 1]} {y}"
 
 def calc_bubble(coin_rial: str, geram18_rial: str, weight: float) -> str:
-    """حباب = قیمت سکه تومان − (گرم۱۸ تومان × ۱.۲ × وزن)"""
+    """حباب = قیمت سکه (تومان) − (۱۸ عیار تومان × ۱.۲ × وزن)"""
     coin = safe_float(coin_rial)
     g18  = safe_float(geram18_rial)
-    if coin is None or g18 is None: return "—"
+    if coin is None or g18 is None:
+        return "—"
     bubble = round(coin / 10 - g18 / 10 * 1.2 * weight)
     return f"{bubble:,}"
 
@@ -188,24 +190,7 @@ def fetch_crypto(dollar_toman: float) -> dict:
             time.sleep(5 * (attempt + 1))
     return {}
 
-def fetch_usdt_toman(fallback_toman: float = 0.0) -> float:
-    """
-    قیمت تتر از Nobitex (صرافی ایرانی) — واحد خروجی: تومان
-    اگه fail شد، به fallback_toman برمی‌گرده.
-    """
-    url = "https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls"
-    try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        data  = r.json()
-        price = float(data["stats"]["usdt-rls"]["latest"])
-        # Nobitex قیمت رو به ریال برمی‌گردونه، تقسیم بر ۱۰ = تومان
-        toman = price / 10
-        log.info(f"  تتر (Nobitex): {toman:,.0f} تومان")
-        return toman
-    except Exception as e:
-        log.warning(f"  ⚠ Nobitex خطا: {e} — fallback به نرخ دلار tgju")
-        return fallback_toman
+def send(text: str):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
@@ -234,14 +219,16 @@ def post_metals(prices: dict) -> str:
     lines    = [f"<b>🏅 فلزات گرانبها</b>", SEP]
 
     for k, fa, is_rial in METALS:
-        if k not in prices: continue
+        if k not in prices:
+            continue
         v = to_toman(prices[k]) if is_rial else fmt_num(prices[k])
         lines.append(f"<b>{fa}: {v}</b>")
 
     lines.append(SEP)
 
     for cid, weight, name in COINS:
-        if cid not in prices: continue
+        if cid not in prices:
+            continue
         price  = to_toman(prices[cid])
         bubble = calc_bubble(prices[cid], g18_rial, weight) if g18_rial else "—"
         lines.append(f"<b>🟠 {name}: {price}  🫧 {bubble}</b>")
@@ -278,13 +265,12 @@ def main():
     dollar_raw   = prices.get("price_dollar_rl")
     dollar_toman = (safe_float(dollar_raw) / 10) if dollar_raw else 0.0
     if dollar_toman:
-        log.info(f"  دلار (tgju): {dollar_toman:,.0f} تومان")
-
-    log.info("⬇ دریافت قیمت تتر از Nobitex...")
-    usdt_toman = fetch_usdt_toman(fallback_toman=dollar_toman)
+        log.info(f"  دلار: {dollar_toman:,.0f} تومان")
+    else:
+        log.warning("  ⚠ نرخ دلار دریافت نشد")
 
     log.info("⬇ دریافت کریپتو از CoinGecko...")
-    cp = fetch_crypto(usdt_toman)
+    cp = fetch_crypto(dollar_toman)
     log.info(f"  ✓ {len(cp)}/{len(CRYPTOS)} کریپتو ({time.time()-t0:.1f}s)")
 
     log.info("📤 ارسال پست‌ها...")
