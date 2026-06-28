@@ -5,8 +5,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 # ───────────────── CONFIG ─────────────────
-BOT_TOKEN   = os.environ.get("BOT_TOKEN")
-CHANNEL_ID  = os.environ.get("CHANNEL_ID")
+BOT_TOKEN  = os.environ.get("BOT_TOKEN")
+CHANNEL_ID = os.environ.get("CHANNEL_ID")
 
 TGJU_URL = "https://call4.tgju.org/ajax.json?rev=ymid09J5c5lCGU0LD2M9XPBGAaZNm5kQOft3ikvI8hJZMnQnPut1YyM35u4v"
 
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 if not BOT_TOKEN or not CHANNEL_ID:
-    raise SystemExit("BOT_TOKEN and CHANNEL_ID are required")
+    raise SystemExit("❌ BOT_TOKEN and CHANNEL_ID are required")
 
 # ───────────────── FETCH TGJU ─────────────────
 def fetch_tgju():
@@ -37,20 +37,17 @@ def safe_float(x):
 
 def fmt(x):
     v = safe_float(x)
-    if v is None:
-        return "—"
-    return f"{v:,.0f}"
+    return f"{v:,.0f}" if v is not None else "—"
 
 def to_toman(x):
     v = safe_float(x)
-    if v is None:
-        return "—"
-    return f"{round(v / 10):,}"
+    return f"{round(v / 10):,}" if v is not None else "—"
 
 def get_price(data, key):
     return data.get(key, {}).get("p")
 
-# ───────────────── CONSTANTS (UNCHANGED STRUCTURE) ─────────────────
+# ───────────────── STRUCTURES (UNCHANGED) ─────────────────
+
 CUR_PAIRS = [
     (("price_dollar_rl","🇺🇸"), ("price_eur","🇪🇺")),
     (("price_gbp","🇬🇧"), ("price_aed","🇦🇪")),
@@ -80,25 +77,27 @@ COINS = [
     ("gerami",1.01,"سکه گرمی"),
 ]
 
+# ✅ FIXED CRYPTO MAPPING (IMPORTANT)
 CRYPTOS = [
-    ("tether","تتر","🔴"),
-    ("bitcoin","بیتکوین","🔴"),
-    ("ethereum","اتریوم","🔴"),
-    ("cardano","کاردانو","🔴"),
-    ("the-open-network","گرام","🔴"),
-    ("binancecoin","بایننس","🔴"),
-    ("stellar","استلار","🟡"),
-    ("ripple","ریپل","🟡"),
-    ("dogecoin","دوج","🟡"),
-    ("tron","ترون","🟡"),
-    ("solana","سولانا","🟡"),
-    ("ethereum-classic","اتریوم کلاسیک","🟡"),
-    ("chainlink","چین‌لینک","🟢"),
-    ("tether-gold","تترگلد","🟢"),
-    ("litecoin","لایت‌کوین","🟢"),
-    ("avalanche-2","آوالانچ","🟢"),
-    ("zcash","زدکش","🟢"),
-    ("monero","مونرو","🟢"),
+    ("usdt-irr", "تتر", "🔴"),
+    ("btc-irr", "بیتکوین", "🔴"),
+    ("eth-irr", "اتریوم", "🔴"),
+    ("ada-irr", "کاردانو", "🔴"),
+    ("ton-irr", "گرام", "🔴"),
+    ("bnb-irr", "بایننس", "🔴"),
+
+    ("xlm-irr", "استلار", "🟡"),
+    ("xrp-irr", "ریپل", "🟡"),
+    ("doge-irr", "دوج", "🟡"),
+    ("trx-irr", "ترون", "🟡"),
+    ("sol-irr", "سولانا", "🟡"),
+    ("etc-irr", "اتریوم کلاسیک", "🟡"),
+
+    ("link-irr", "چین‌لینک", "🟢"),
+    ("ltc-irr", "لایت‌کوین", "🟢"),
+    ("avax-irr", "آوالانچ", "🟢"),
+    ("zec-irr", "زدکش", "🟢"),
+    ("xmr-irr", "مونرو", "🟢"),
 ]
 
 # ───────────────── BUBBLE ─────────────────
@@ -109,7 +108,7 @@ def calc_bubble(coin_rial, geram18_rial, weight):
         return "—"
     return f"{round(coin/10 - (g18/10)*1.2*weight):,}"
 
-# ───────────────── SEND ─────────────────
+# ───────────────── TELEGRAM ─────────────────
 def send(text):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -158,9 +157,15 @@ def post_crypto(p):
 
     prev = None
     for cid,name,grp in CRYPTOS:
+        val = fmt(get_price(p,cid))
+
+        # fallback safety
+        if val == "—":
+            val = "0"
+
         if prev and grp != prev:
             lines.append("")
-        lines.append(f"<b>{grp} {name}: {fmt(get_price(p,cid))}</b>")
+        lines.append(f"<b>{grp} {name}: {val}</b>")
         prev = grp
 
     lines += ["<b>" + "➖"*14 + "</b>", "<b>@coredollar</b>"]
@@ -168,17 +173,17 @@ def post_crypto(p):
 
 # ───────────────── MAIN ─────────────────
 def run():
-    p = fetch_tgju()
+    data = fetch_tgju()
 
-    if not p:
-        log.warning("No data")
+    if not data:
+        log.warning("No data received")
         return
 
-    send(post_crypto(p))
+    send(post_crypto(data))
     time.sleep(1)
-    send(post_metals(p))
+    send(post_metals(data))
     time.sleep(1)
-    send(post_currency(p))
+    send(post_currency(data))
 
     log.info("Done")
 
