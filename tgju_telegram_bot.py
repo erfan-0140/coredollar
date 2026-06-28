@@ -4,22 +4,21 @@ import requests
 import logging
 from datetime import datetime, timezone, timedelta
 
-# ─── CONFIG ───────────────────────────────────────
-BOT_TOKEN  = os.environ.get("BOT_TOKEN")
-CHANNEL_ID = os.environ.get("CHANNEL_ID")
+# ───────────────── CONFIG ─────────────────
+BOT_TOKEN   = os.environ.get("BOT_TOKEN")
+CHANNEL_ID  = os.environ.get("CHANNEL_ID")
 
 TGJU_URL = "https://call4.tgju.org/ajax.json?rev=ymid09J5c5lCGU0LD2M9XPBGAaZNm5kQOft3ikvI8hJZMnQnPut1YyM35u4v"
 
-# Iran time (Tehran)
 TEHRAN_TZ = timezone(timedelta(hours=3, minutes=30))
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 if not BOT_TOKEN or not CHANNEL_ID:
-    raise SystemExit("❌ BOT_TOKEN and CHANNEL_ID are required")
+    raise SystemExit("BOT_TOKEN and CHANNEL_ID are required")
 
-# ─── FETCH TGJU DATA ─────────────────────────────
+# ───────────────── FETCH TGJU ─────────────────
 def fetch_tgju():
     try:
         r = requests.get(TGJU_URL, timeout=10)
@@ -29,81 +28,159 @@ def fetch_tgju():
         log.error(f"TGJU error: {e}")
         return {}
 
-# ─── FORMAT NUMBER ────────────────────────────────
-def fmt(x):
+# ───────────────── HELPERS ─────────────────
+def safe_float(x):
     try:
-        return f"{float(x):,}"
+        return float(str(x).replace(",", ""))
     except:
-        return "—"
+        return None
 
-# ─── GET PRICE ────────────────────────────────────
+def fmt(x):
+    v = safe_float(x)
+    if v is None:
+        return "—"
+    return f"{v:,.0f}"
+
+def to_toman(x):
+    v = safe_float(x)
+    if v is None:
+        return "—"
+    return f"{round(v / 10):,}"
+
 def get_price(data, key):
     return data.get(key, {}).get("p")
 
-# ─── MESSAGE: CURRENCY ───────────────────────────
-def build_currency(data):
-    usd = fmt(get_price(data, "usd-try-ask"))
-    eur = fmt(get_price(data, "eur-try-ask"))
-    gbp = fmt(get_price(data, "gbp-try-ask"))
+# ───────────────── CONSTANTS (UNCHANGED STRUCTURE) ─────────────────
+CUR_PAIRS = [
+    (("price_dollar_rl","🇺🇸"), ("price_eur","🇪🇺")),
+    (("price_gbp","🇬🇧"), ("price_aed","🇦🇪")),
+    (("price_try","🇹🇷"), ("price_cny","🇨🇳")),
+    (("price_cad","🇨🇦"), ("price_aud","🇦🇺")),
+    (("price_iqd","🇮🇶"), ("price_rub","🇷🇺")),
+    (("price_sek","🇸🇪"), ("price_sar","🇸🇦")),
+    (("price_myr","🇲🇾"), ("price_thb","🇹🇭")),
+    (("price_amd","🇦🇲"), ("price_azn","🇦🇿")),
+    (("price_gel","🇬🇪"), ("price_afn","🇦🇫")),
+    (("price_qar","🇶🇦"), ("price_omr","🇴🇲")),
+]
 
-    now = datetime.now(TEHRAN_TZ).strftime("%Y-%m-%d %H:%M")
+METALS = [
+    ("ons","💛 انس",False),
+    ("mesghal","💛 مثقال",True),
+    ("geram18","💛 ۱۸ عیار",True),
+    ("geram24","💛 ۲۴ عیار",True),
+    ("silver_999","🩶 نقره",True),
+]
 
-    return f"""
-💵 <b>Currency Market</b>
+COINS = [
+    ("sekee",8.133,"امامی"),
+    ("sekeb",8.133,"بهار آزادی"),
+    ("nim",4.0665,"نیم سکه"),
+    ("rob",2.03325,"ربع سکه"),
+    ("gerami",1.01,"سکه گرمی"),
+]
 
-🇺🇸 USD: {usd}
-🇪🇺 EUR: {eur}
-🇬🇧 GBP: {gbp}
+CRYPTOS = [
+    ("tether","تتر","🔴"),
+    ("bitcoin","بیتکوین","🔴"),
+    ("ethereum","اتریوم","🔴"),
+    ("cardano","کاردانو","🔴"),
+    ("the-open-network","گرام","🔴"),
+    ("binancecoin","بایننس","🔴"),
+    ("stellar","استلار","🟡"),
+    ("ripple","ریپل","🟡"),
+    ("dogecoin","دوج","🟡"),
+    ("tron","ترون","🟡"),
+    ("solana","سولانا","🟡"),
+    ("ethereum-classic","اتریوم کلاسیک","🟡"),
+    ("chainlink","چین‌لینک","🟢"),
+    ("tether-gold","تترگلد","🟢"),
+    ("litecoin","لایت‌کوین","🟢"),
+    ("avalanche-2","آوالانچ","🟢"),
+    ("zcash","زدکش","🟢"),
+    ("monero","مونرو","🟢"),
+]
 
-⏰ {now}
-"""
+# ───────────────── BUBBLE ─────────────────
+def calc_bubble(coin_rial, geram18_rial, weight):
+    coin = safe_float(coin_rial)
+    g18  = safe_float(geram18_rial)
+    if not coin or not g18:
+        return "—"
+    return f"{round(coin/10 - (g18/10)*1.2*weight):,}"
 
-# ─── MESSAGE: CRYPTO ──────────────────────────────
-def build_crypto(data):
-    usdt = fmt(get_price(data, "usdt-irr"))
-    btc  = fmt(get_price(data, "btc-irr"))
-    eth  = fmt(get_price(data, "eth-irr"))
-
-    now = datetime.now(TEHRAN_TZ).strftime("%Y-%m-%d %H:%M")
-
-    return f"""
-🪙 <b>Crypto Market</b>
-
-USDT: {usdt}
-BTC: {btc}
-ETH: {eth}
-
-⏰ {now}
-"""
-
-# ─── SEND TELEGRAM MESSAGE ────────────────────────
-def send(msg):
+# ───────────────── SEND ─────────────────
+def send(text):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={
             "chat_id": CHANNEL_ID,
-            "text": msg,
+            "text": text,
             "parse_mode": "HTML"
         }, timeout=10)
     except Exception as e:
         log.error(f"Telegram error: {e}")
 
-# ─── MAIN RUN ─────────────────────────────────────
-def run():
-    data = fetch_tgju()
+# ───────────────── POSTS (UNCHANGED STRUCTURE) ─────────────────
 
-    if not data:
-        log.warning("No data received from TGJU")
+def post_currency(p):
+    lines = [f"<b>💵 ارزهای آزاد</b>", "<b>" + "➖"*14 + "</b>"]
+    rows = []
+
+    for (k1,f1),(k2,f2) in CUR_PAIRS:
+        v1 = to_toman(get_price(p,k1))
+        v2 = to_toman(get_price(p,k2))
+        rows.append(f"{f1} {v1:>12}    {v2:<12} {f2}")
+
+    lines.append("<pre>" + "\n".join(rows) + "</pre>")
+    lines += ["<b>" + "➖"*14 + "</b>", "<b>@coredollar</b>"]
+    return "\n".join(lines)
+
+def post_metals(p):
+    g18 = get_price(p,"geram18")
+    lines = ["<b>🏅 فلزات گرانبها</b>", "<b>" + "➖"*14 + "</b>"]
+
+    for k,fa,_ in METALS:
+        lines.append(f"<b>{fa}: {fmt(get_price(p,k))}</b>")
+
+    lines.append("<b>" + "➖"*14 + "</b>")
+
+    for cid,w,name in COINS:
+        price = to_toman(get_price(p,cid))
+        bubble = calc_bubble(get_price(p,cid), g18, w)
+        lines.append(f"<b>🟠 {name}: {price}  🫧 {bubble}</b>")
+
+    lines += ["<b>" + "➖"*14 + "</b>", "<b>@coredollar</b>"]
+    return "\n".join(lines)
+
+def post_crypto(p):
+    lines = ["<b>🪙 کریپتوکارنسی</b>", "<b>" + "➖"*14 + "</b>"]
+
+    prev = None
+    for cid,name,grp in CRYPTOS:
+        if prev and grp != prev:
+            lines.append("")
+        lines.append(f"<b>{grp} {name}: {fmt(get_price(p,cid))}</b>")
+        prev = grp
+
+    lines += ["<b>" + "➖"*14 + "</b>", "<b>@coredollar</b>"]
+    return "\n".join(lines)
+
+# ───────────────── MAIN ─────────────────
+def run():
+    p = fetch_tgju()
+
+    if not p:
+        log.warning("No data")
         return
 
-    log.info("TGJU data fetched successfully")
-
-    send(build_currency(data))
+    send(post_crypto(p))
     time.sleep(1)
-    send(build_crypto(data))
+    send(post_metals(p))
+    time.sleep(1)
+    send(post_currency(p))
 
-    log.info("Messages sent successfully")
+    log.info("Done")
 
-# ─── START ────────────────────────────────────────
 if __name__ == "__main__":
     run()
