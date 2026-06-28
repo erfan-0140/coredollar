@@ -34,7 +34,7 @@ PRICE_PATTERNS = [
     re.compile(r"قیمت لحظه.ای[:\s]*([\d,]+(?:\.\d+)?)"),
     re.compile(r'"price"\s*:\s*"?([\d,]+(?:\.\d+)?)"?'),
 ]
-SEP = "<b>" + "┄" * 16 + "</b>"
+SEP = "<b>" + "➖" * 15 + "</b>"
 
 JALALI_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور",
                   "مهر","آبان","آذر","دی","بهمن","اسفند"]
@@ -59,17 +59,17 @@ CUR_PAIRS = [
 
 # ─── فلزات ───────────────────────────────────────────────────────────────────
 METALS = [
-    ("ons",        "💛 انس جهانی طلا",      False),
-    ("mesghal",    "💛 مثقال طلا",            True),
-    ("geram18",    "💛 طلای ۱۸ عیار (گرم)",  True),
-    ("geram24",    "💛 طلای ۲۴ عیار (گرم)",  True),
-    ("silver_999", "🩶 نقره ۹۹۹ (گرم)",      True),
+    ("ons",        "💛 انس",      False),
+    ("mesghal",    "💛 مثقال",    True),
+    ("geram18",    "💛 ۱۸ عیار",  True),
+    ("geram24",    "💛 ۲۴ عیار",  True),
+    ("silver_999", "🩶 نقره",     True),
 ]
 
 # ─── سکه ── (tgju_id، وزن گرم، نام) ─────────────────────────────────────────
 COINS = [
-    ("sekee",       8.133,   "سکه امامی"),
-    ("sekeb",       8.133,   "سکه بهار آزادی"),
+    ("sekee",       8.133,   "امامی"),
+    ("sekeb",       8.133,   "بهار آزادی"),
     ("nim",         4.0665,  "نیم سکه"),
     ("rob",         2.03325, "ربع سکه"),
     ("seke-gerami", 1.01,    "سکه گرمی"),
@@ -126,8 +126,7 @@ def calc_bubble(coin_rial: str, geram18_rial: str, weight: float) -> str:
     g18  = safe_float(geram18_rial)
     if coin is None or g18 is None: return "—"
     bubble = round(coin / 10 - g18 / 10 * 1.2 * weight)
-    sign   = "+" if bubble >= 0 else ""
-    return f"{sign}{bubble:,}"
+    return f"{bubble:,}"
 
 # ─── scraping tgju ───────────────────────────────────────────────────────────
 def scrape_one(row_id: str, retries: int = 2) -> tuple[str, Optional[str]]:
@@ -189,7 +188,24 @@ def fetch_crypto(dollar_toman: float) -> dict:
             time.sleep(5 * (attempt + 1))
     return {}
 
-def send(text: str):
+def fetch_usdt_toman(fallback_toman: float = 0.0) -> float:
+    """
+    قیمت تتر از Nobitex (صرافی ایرانی) — واحد خروجی: تومان
+    اگه fail شد، به fallback_toman برمی‌گرده.
+    """
+    url = "https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls"
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        data  = r.json()
+        price = float(data["stats"]["usdt-rls"]["latest"])
+        # Nobitex قیمت رو به ریال برمی‌گردونه، تقسیم بر ۱۰ = تومان
+        toman = price / 10
+        log.info(f"  تتر (Nobitex): {toman:,.0f} تومان")
+        return toman
+    except Exception as e:
+        log.warning(f"  ⚠ Nobitex خطا: {e} — fallback به نرخ دلار tgju")
+        return fallback_toman
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
@@ -262,12 +278,13 @@ def main():
     dollar_raw   = prices.get("price_dollar_rl")
     dollar_toman = (safe_float(dollar_raw) / 10) if dollar_raw else 0.0
     if dollar_toman:
-        log.info(f"  دلار: {dollar_toman:,.0f} تومان")
-    else:
-        log.warning("  ⚠ نرخ دلار دریافت نشد")
+        log.info(f"  دلار (tgju): {dollar_toman:,.0f} تومان")
+
+    log.info("⬇ دریافت قیمت تتر از Nobitex...")
+    usdt_toman = fetch_usdt_toman(fallback_toman=dollar_toman)
 
     log.info("⬇ دریافت کریپتو از CoinGecko...")
-    cp = fetch_crypto(dollar_toman)
+    cp = fetch_crypto(usdt_toman)
     log.info(f"  ✓ {len(cp)}/{len(CRYPTOS)} کریپتو ({time.time()-t0:.1f}s)")
 
     log.info("📤 ارسال پست‌ها...")
