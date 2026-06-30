@@ -83,10 +83,10 @@ CRYPTOS = [
     ("tron",             "ترون",           "🔴"),
     ("ripple",           "ریپل",           "🔴"),
     ("dogecoin",         "دوج",            "🔴"),
-    ("bitcoin-cash",     "بیت‌کوین کش",    "🔴"),
+    ("the-open-network", "گرام",           "🔴"),
     # 🟡
     ("binancecoin",      "بایننس",         "🟡"),
-    ("the-open-network", "گرام",           "🟡"),
+    ("bitcoin-cash",     "بیت‌کوین کش",    "🟡"),
     ("cardano",          "کاردانو",        "🟡"),
     ("solana",           "سولانا",         "🟡"),
     ("stellar",          "استلار",         "🟡"),
@@ -112,15 +112,15 @@ def to_toman(s) -> str:
     return f"{round(v / 10):,}" if v is not None else "—"
 
 def fmt_usd(usd: float) -> str:
-    """فرمت قیمت دلاری: اعشار بسته به بزرگی عدد."""
+    """فرمت قیمت دلاری بدون علامت دلار (چون در سرخط هست)."""
     if usd >= 1_000:
-        return f"${round(usd):,}"
+        return f"{round(usd):,}"
     elif usd >= 1:
-        return f"${usd:,.2f}"
+        return f"{usd:,.2f}"
     elif usd >= 0.001:
-        return f"${usd:.4f}"
+        return f"{usd:.4f}"
     else:
-        return f"${usd:.6f}"
+        return f"{usd:.6f}"
 
 def fmt_num(s) -> str:
     v = safe_float(s)
@@ -240,7 +240,7 @@ def post_metals(prices: dict) -> str:
         price  = to_toman(prices[cid])
         bubble = calc_bubble(prices[cid], g18_rial, weight) if g18_rial else "—"
         lines.append(f"<b>🟠 {name} : {price}</b>")
-        lines.append(f"<b>🫧 حباب : {bubble}</b>")
+        lines.append(f"<b>🫧 {bubble}</b>")
 
     lines += [SEP, f"<b>{CHANNEL_LINK}</b>"]
     return "\n".join(lines)
