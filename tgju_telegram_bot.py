@@ -128,7 +128,7 @@ def fmt_num(s) -> str:
         return "—"
     return f"{v:,.2f}" if v < 100 else f"{round(v):,}"
 
-JALALI_WEEKDAYS = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یک‌شنبه"]
+JALALI_WEEKDAYS = ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه"]
 
 def jalali_now() -> str:
     now     = datetime.now(TEHRAN_TZ)
@@ -136,7 +136,7 @@ def jalali_now() -> str:
     d       = str(j.day).translate(PERSIAN)
     y       = str(j.year).translate(PERSIAN)
     weekday = JALALI_WEEKDAYS[j.weekday()]
-    return f"{weekday}⬅️{d} {JALALI_MONTHS[j.month - 1]} {y}"
+    return f"{weekday}: {d} {JALALI_MONTHS[j.month - 1]} {y}"
 
 def calc_bubble(coin_rial: str, geram18_rial: str, weight: float) -> str:
     coin = safe_float(coin_rial)
