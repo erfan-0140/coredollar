@@ -34,7 +34,7 @@ PRICE_PATTERNS = [
     re.compile(r"قیمت لحظه.ای[:\s]*([\d,]+(?:\.\d+)?)"),
     re.compile(r'"price"\s*:\s*"?([\d,]+(?:\.\d+)?)"?'),
 ]
-SEP = "<b>" + "➖" * 14 + "</b>"
+SEP = "<b>" + "➖" * 13 + "</b>"
 
 JALALI_MONTHS = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور",
                   "مهر","آبان","آذر","دی","بهمن","اسفند"]
@@ -211,7 +211,8 @@ def send(text: str):
 
 # ─── ساخت پست کریپتو ─────────────────────────────────────────────────────────
 def post_crypto(cp: dict) -> str:
-    lines    = [f"<b> کریپتوکارنسی ($)</b>", SEP]
+    date  = jalali_now()
+    lines = [f"<b> کریپتوکارنسی ($)          {date}</b>", SEP]
     prev_grp = None
     for cid, name, grp in CRYPTOS:
         if prev_grp and grp != prev_grp:
@@ -224,7 +225,8 @@ def post_crypto(cp: dict) -> str:
 # ─── ساخت پست فلزات ──────────────────────────────────────────────────────────
 def post_metals(prices: dict) -> str:
     g18_rial = prices.get("geram18")
-    lines    = [f"<b> فلزات گرانبها (تومان)</b>", SEP]
+    date     = jalali_now()
+    lines    = [f"<b> فلزات گرانبها (تومان)          {date}</b>", SEP]
 
     for k, fa, is_rial in METALS:
         if k not in prices:
@@ -247,7 +249,8 @@ def post_metals(prices: dict) -> str:
 
 # ─── ساخت پست ارزها ──────────────────────────────────────────────────────────
 def post_currency(prices: dict) -> str:
-    lines = [f"<b> ارزهای آزاد (تومان)</b>", SEP]
+    date  = jalali_now()
+    lines = [f"<b> ارزهای آزاد (تومان)          {date}</b>", SEP]
     rows  = []
     for (k1, f1), (k2, f2) in CUR_PAIRS:
         p1 = to_toman(prices[k1]) if k1 in prices else "—"
