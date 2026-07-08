@@ -1,1 +1,25 @@
+name: Post Daily Sticker
 
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send-sticker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pillow jdatetime requests
+
+      - name: Send sticker
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+        run: python sticker.py
